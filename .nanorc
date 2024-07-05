@@ -1,0 +1,20 @@
+set linenumbers
+set autoindent
+set tabsize 2
+set mouse
+set softwrap
+set atblanks
+set tabstospaces
+set stateflags
+set smarthome
+set titlecolor mint,normal
+set stripecolor latte,normal
+set statuscolor grey,mint
+set emptyline
+set functioncolor mint
+set keycolor bold,mint
+set numbercolor bold,latte
+set zap
+
+include /usr/share/nano/*.nanorc
+# include /usr/share/nano-syntax-highlighting/*.nanorc
