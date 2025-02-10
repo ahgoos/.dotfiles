@@ -1,0 +1,127 @@
+lssh() {
+    if [[ "$1" == "-c" && $# -ge 3 ]]; then
+        local alias_name="$2"
+        local user_host="$3"
+        local pem_file="${4:-}" # Optional parameter for .pem file path
+
+        # Check if the session alias already exists
+        if grep -q "Host $alias_name" ~/.ssh/config; then
+            echo "Session $alias_name already exists."
+        else
+            # Append new session to config
+            echo "Host $alias_name" >>~/.ssh/config
+            echo "    HostName $(echo $user_host | cut -d'@' -f2)" >>~/.ssh/config
+            echo "    User $(echo $user_host | cut -d'@' -f1)" >>~/.ssh/config
+            if [[ -n "$pem_file" ]]; then
+                echo "    IdentityFile $pem_file" >>~/.ssh/config
+            fi
+	    echo "" >>~/.ssh/config
+            echo "Session $alias_name added successfully."
+
+            # Ask to start the session
+            read -p "Do you want to start this session now? [Y/n] " answer
+            if [[ $answer =~ ^[Yy]$ ]]; then
+                ssh $alias_name
+            fi
+        fi
+    elif [[ "$1" == "-m" && $# -ge 3 ]]; then
+        local alias_name="$2"
+        local user_host="$3"
+        local pem_file="${4:-}" # Optional parameter for .pem file path
+
+        if ! grep -q "Host $alias_name" ~/.ssh/config; then
+            echo "Session $alias_name does not exist."
+            return
+        fi
+
+        # Use awk to update the existing session in ~/.ssh/config
+        awk -v alias="$alias_name" -v hostname="$(echo $user_host | cut -d'@' -f2)" -v username="$(echo $user_host | cut -d'@' -f1)" -v pemfile="$pem_file" '
+            BEGIN {skip=0}
+            /^Host / {print; if ($2 == alias) {skip=1; print "    HostName " hostname; print "    User " username; if (pemfile != "") print "    IdentityFile " pemfile; print ""} else skip=0; next}
+            skip {next}
+            {print}
+        ' ~/.ssh/config >~/.ssh/config.tmp && mv ~/.ssh/config.tmp ~/.ssh/config
+
+        echo "Session $alias_name updated successfully."
+    elif [[ "$1" == "-d" && $# -ge 2 ]]; then
+        local alias_name="$2"
+
+        if ! grep -q "Host $alias_name" ~/.ssh/config; then
+            echo "Session $alias_name does not exist."
+            return
+        fi
+
+        awk -v alias="$alias_name" '
+            BEGIN {skip=0; printBlock=1}
+            /^Host / {printBlock=1}
+            /^Host[[:space:]]+'"${alias_name}"'$/ {printBlock=0; skip=1}
+            /^Host / && !/^Host[[:space:]]+'"${alias_name}"'$/ && skip {skip=0; printBlock=1}
+            {if(printBlock && !skip) print}
+        ' ~/.ssh/config > ~/.ssh/config.tmp && mv ~/.ssh/config.tmp ~/.ssh/config
+
+        echo "Session $alias_name deleted successfully."
+    else
+        local session_list=$(awk '
+            BEGIN {
+                FS = "\n"; RS = "";
+            }
+            /Host / && !/Host \*/ {
+                split($0, lines, "\n");
+		alias = ""; host = ""; user = ""; pem = "";
+                for (i in lines) {
+                    if (lines[i] ~ /Host /) {
+                        sub(/Host /, "", lines[i]);
+                        alias = lines[i];
+                    } else if (lines[i] ~ /HostName /) {
+                        sub(/^[ \t]*HostName +|[ \t]+$/, "", lines[i]);
+                        
+                        host = lines[i];
+                    } else if (lines[i] ~ /User /) {
+                        # Remove User from the line
+                        sub(/^[ \t]*User +|[ \t]+$/, "", lines[i]);
+                        
+                        user = lines[i];
+                    } else if (lines[i] ~ /IdentityFile /) {
+                        # Remove IdentityFile from the line
+                        sub(/^[ \t]*IdentityFile +|[ \t]+$/, "", lines[i]);
+                        # Only keep the filename after the last slash
+                        sub(".*/", "", lines[i]);
+                        pem = lines[i];
+                    }
+                }
+                if (alias != "" && host != "" && user != "") {
+                    if (pem != "") {
+                        printf "%s: %s@%s \033[90m%s\033[0m\n", alias, user, host, pem;
+                    } else {
+                        printf "%s: %s@%s\n", alias, user, host;
+                    }
+                }
+            }
+        ' ~/.ssh/config)
+        if [[ -z "$session_list" ]]; then
+            echo "No configured SSH sessions found."
+            return
+        fi
+
+        local selection=$(echo -e "$session_list" | fzf --ansi --height 40% --reverse --prompt="Available SSH sessions: " --header="Use UP/DOWN to navigate, ENTER to select, ESC to exit." --color hl+:#FC98F8 | awk -F ': ' '{print $1}')
+
+        if [[ -n "$selection" ]]; then
+            echo "Connecting to $selection..."
+            ssh "$selection"
+        else
+            echo "No session selected."
+        fi
+    fi
+}
+
+workon() {
+  if [ -d "$1/bin" ]; then
+    source "$1/bin/activate"
+  else
+    echo "Virtual environment directory not found."
+  fi
+}
+
+# Aliases
+alias clr=clear
+alias snano='sudo nano --rcfile=/home/ahgoos/.nanorc'
